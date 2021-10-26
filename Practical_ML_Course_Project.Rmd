@@ -1,0 +1,135 @@
+---
+title: "Predict activity quality from activity monitors"
+author: "Piotr Zalewski"
+date: "10/26/2021"
+output:
+  html_document:
+    keep_md: yes
+---
+
+## Synopsis
+
+*Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.*
+
+*In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways:*
+
+- *exactly according to the specification (Class A)*
+- *throwing the elbows to the front (Class B)*
+- *lifting the dumbbell only halfway (Class C)*
+- *lowering the dumbbell only halfway (Class D)*
+- *throwing the hips to the front (Class E)*
+
+## Data Load
+
+Data is downloaded directly from the web (see URL links in the script).
+
+```{r, echo=TRUE, cache=TRUE}
+train_data_url<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+train_data_full<-read.csv(train_data_url)
+test_data_url<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+test_data_full<-read.csv(test_data_url)
+```
+
+## Data Subset
+
+For further processing, only pre-processed parameters will be considered, i.e.:  yaw, pitch, roll & total acceleration.
+
+```{r, echo=TRUE}
+train_col <- grep("^yaw*.|^pitch*.|^roll*.|^total_accel*.|classe",
+                  names(train_data_full))
+train_data <- train_data_full[,train_col]
+train_data$classe <- as.factor(train_data$classe)
+test_col <- grep("^yaw*.|^pitch*.|^roll*.|^total*.",
+                 names(test_data_full))
+test_data <- test_data_full[,test_col]
+```
+
+## Packages Load
+
+Required R packages are loaded.
+
+```{r, echo=TRUE, message=FALSE}
+require(randomForest)
+require(rpart)
+require(caret)
+```
+
+## Data Partitioning
+
+Training data set is further partitioned 80/20 for cross validation and out of sample (OOS) error estimate. Expected OOS error will be calculated as 1 minus Accuracy in the cross validation data set predictions.
+
+```{r, echo=TRUE}
+partition  <- createDataPartition(y=train_data$classe, p=0.8, list=FALSE)
+train_part <- train_data[partition, ] 
+test_part  <- train_data[-partition, ]
+```
+
+## Exploratory analysis
+
+Outcome variable frequency plot is generated to assess all levels are equally represented in training data set.
+
+```{r, echo=TRUE, fig.height=3}
+ggplot(train_part) +
+  aes(classe) +
+  geom_bar(fill="salmon") +
+  labs(title="classe levels frequency plot", x="classe levels", y="frequency")
+```
+
+Plot indicates that all outcome levels are well represented in training data set.
+
+## Prediction Models
+
+Two models will be evaluated: decision tree and random forest. Preferred model will be selected based on in sample predictive accuracy.
+
+Three-fold cross validation control will be used for model training.
+
+```{r,echo=TRUE}
+cv_control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+
+### Decision Tree Model
+
+```{r, echo=TRUE, cache=TRUE}
+set.seed(1)
+dt_fit  <- train(classe ~ .,
+                 method="rpart",
+                 data=train_part,
+                 trControl = cv_control,
+                 tuneLength = 5)
+dt_pred <- predict(dt_fit, newdata=test_part)
+##
+confusionMatrix(dt_pred, test_part$classe)
+```
+
+### Random Forest Model
+
+```{r, echo=TRUE, cach=TRUE}
+set.seed(1)
+rf_fit <- train(classe ~ .,
+                method="rf",
+                data=train_part,
+                trControl = cv_control,
+                tuneLength = 5)
+rf_pred <- predict(rf_fit, newdata=test_part)
+##
+confusionMatrix(rf_pred, test_part$classe)
+```
+
+## Conclusion
+
+Confusion matrices indicate that random forest algorithm outperforms others with above 99% accuracy. Therefore, random forest model is selected for final prediction on test data sample.
+
+### Out of sample Error Estimate
+The expected out of sample error is below 1%. Error is calculated as 1 minus Accuracy for the predictions made with cross validation data set.
+
+### Test Data Prediction Results and Submission File
+
+Test data set contains 20 observations.
+
+```{r, echo=TRUE}
+#
+results <- predict(rf_fit, newdata=test_data)
+#
+write.table(results, "results.txt", row.names = FALSE, col.names = FALSE)
+results
+```
